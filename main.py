@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from routers import tasks, agents, hitl, metrics, memory, admin, profile
+from routers import tasks, agents, hitl, metrics, memory, admin, profile, flows
 from config import settings
 
 app = FastAPI(title="HELM API", version="1.0.0")
@@ -20,6 +20,7 @@ app.include_router(metrics.router, prefix="/metrics", tags=["metrics"])
 app.include_router(memory.router, prefix="/memory",  tags=["memory"])
 app.include_router(admin.router,  prefix="/admin",   tags=["admin"])
 app.include_router(profile.router, prefix="/profile", tags=["profile"])
+app.include_router(flows.router,  prefix="/flows",   tags=["flows"])
 
 
 @app.get("/health")

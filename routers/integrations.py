@@ -202,6 +202,7 @@ async def save_api_key(
             "access_token_encrypted": encrypted,
             "is_active": True,
             "updated_at": datetime.now(timezone.utc).isoformat(),
+            "token_expires_at": "2099-12-31T00:00:00Z",
             "metadata": {"type": "api_key"},
         }
 

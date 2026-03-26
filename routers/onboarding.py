@@ -3,15 +3,18 @@ Self-service onboarding router.
 Allows new users (already signed up via Supabase Auth) to create their
 workspace, profile, and initial agents without admin intervention.
 """
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Request
 from pydantic import BaseModel
 from config import settings
 from supabase import create_client
 from auth import AuthUser, get_current_user
 from routers.notifications import notify_super_admins
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 router = APIRouter()
 sb = create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_KEY)
+limiter = Limiter(key_func=get_remote_address)
 
 
 # ═══════════════════════════════════════════════════
@@ -94,7 +97,8 @@ class SelfOnboardRequest(BaseModel):
 # ═══════════════════════════════════════════════════
 
 @router.post("/self-service")
-async def self_service_onboard(req: SelfOnboardRequest, user: AuthUser = Depends(get_current_user)):
+@limiter.limit("5/hour")
+async def self_service_onboard(request: Request, req: SelfOnboardRequest, user: AuthUser = Depends(get_current_user)):
     """
     Self-service onboarding for new users.
     The user already exists in Supabase Auth (signed up via frontend).

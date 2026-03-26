@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     ENCRYPTION_KEY: str = ""  # Fernet key for token encryption
     FRONTEND_URL: str = "http://localhost:5173"
     MODEL_NAME: str = "claude-sonnet-4-20250514"
+    ENVIRONMENT: str = "development"  # development | production
 
     class Config:
         env_file = ".env"

@@ -1,16 +1,20 @@
-from fastapi import APIRouter, BackgroundTasks, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends, Request
 from models.task import TaskRequest, TaskResponse
 from config import settings
 from supabase import create_client
 from orchestrator import orchestrate
 from datetime import datetime, timezone
 from auth import AuthUser, get_current_user
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 router = APIRouter()
 sb = create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_KEY)
+limiter = Limiter(key_func=get_remote_address)
 
 @router.post("", response_model=TaskResponse)
-async def create_task(req: TaskRequest, bg: BackgroundTasks, user: AuthUser = Depends(get_current_user)):
+@limiter.limit("20/minute")
+async def create_task(request: Request, req: TaskRequest, bg: BackgroundTasks, user: AuthUser = Depends(get_current_user)):
     # Verify workspace access
     from auth import require_workspace_access
     await require_workspace_access(req.workspace_id, user)

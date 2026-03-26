@@ -425,6 +425,13 @@ async def update_template(template_id: str, updates: dict):
     return sb.table("agent_templates").update(filtered).eq("id", template_id).execute().data
 
 
+@router.delete("/templates/{template_id}")
+async def delete_template(template_id: str):
+    """Delete an agent template."""
+    sb.table("agent_templates").delete().eq("id", template_id).execute()
+    return {"ok": True}
+
+
 # ═══════════════════════════════════════════════════
 # WORKSPACE MEMBERS
 # ═══════════════════════════════════════════════════

@@ -151,6 +151,56 @@ async def execute_subtasks(plan: dict, task_id: str, agent_map: dict[str, Dynami
     return results
 
 
+async def _enhance_task_prompt(client: anthropic.Anthropic, user_input: str, workspace_id: str) -> str:
+    """Enhance a simple user prompt into a detailed, actionable task."""
+    # Skip enhancement for already detailed prompts (>200 chars)
+    if len(user_input) > 200:
+        return user_input
+
+    try:
+        # Load workspace info for context
+        ws = sb.table("workspaces").select("name, industry, metadata").eq("id", workspace_id).execute().data
+        ws_context = ""
+        if ws:
+            w = ws[0]
+            ws_context = f"Empresa: {w['name']}"
+            if w.get("industry"):
+                ws_context += f" | Sector: {w['industry']}"
+            meta = w.get("metadata") or {}
+            if meta.get("target_audience"):
+                ws_context += f" | Publico: {meta['target_audience']}"
+            if meta.get("brand_tone"):
+                ws_context += f" | Tono: {meta['brand_tone']}"
+
+        response = client.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=400,
+            messages=[{
+                "role": "user",
+                "content": f"""Eres un experto en briefings creativos para agencias.
+Mejora este prompt del usuario para que los agentes de IA produzcan el mejor resultado posible.
+
+REGLAS:
+- Mantén el idioma original del usuario
+- Añade contexto, estructura, formato de entrega y criterios de calidad
+- NO cambies la intencion del usuario, solo enriquece
+- Se conciso (max 100 palabras extra)
+- SOLO devuelve el prompt mejorado, nada mas
+{f"- Contexto: {ws_context}" if ws_context else ""}
+
+Prompt original: {user_input}
+
+Prompt mejorado:"""
+            }]
+        )
+        enhanced = response.content[0].text.strip()
+        if len(enhanced) < 10:
+            return user_input
+        return enhanced
+    except Exception:
+        return user_input
+
+
 async def orchestrate(user_input: str, workspace_id: str, task_id: str) -> dict:
     """Full orchestration: plan → HITL gate → execute agents."""
     client = anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY)
@@ -170,9 +220,18 @@ async def orchestrate(user_input: str, workspace_id: str, task_id: str) -> dict:
     except Exception:
         memory_context = ""
 
-    enriched_input = user_input
+    # 0c. Enhance user prompt with AI
+    enhanced_input = await _enhance_task_prompt(client, user_input, workspace_id)
+
+    enriched_input = enhanced_input
     if memory_context:
-        enriched_input = f"[Contexto del workspace]\n{memory_context}\n\n[Tarea del usuario]\n{user_input}"
+        enriched_input = f"[Contexto del workspace]\n{memory_context}\n\n[Tarea del usuario]\n{enhanced_input}"
+
+    # Store both prompts for display
+    if enhanced_input != user_input:
+        sb.table("tasks").update({
+            "metadata": {"original_prompt": user_input, "enhanced_prompt": enhanced_input}
+        }).eq("id", task_id).execute()
 
     # 1. Plan
     plan_response = client.messages.create(

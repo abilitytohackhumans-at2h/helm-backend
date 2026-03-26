@@ -1,21 +1,24 @@
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Depends
 from models.flow import FlowCreate, FlowUpdate
 from config import settings
 from supabase import create_client
 from orchestrator import orchestrate
 from datetime import datetime, timezone
+from auth import AuthUser, get_current_user
 
 router = APIRouter()
 sb = create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_KEY)
 
 
 @router.get("")
-async def list_flows(workspace_id: str):
+async def list_flows(workspace_id: str, user: AuthUser = Depends(get_current_user)):
+    from auth import require_workspace_access
+    await require_workspace_access(workspace_id, user)
     return sb.table("scheduled_flows").select("*").eq("workspace_id", workspace_id).order("created_at", desc=True).execute().data
 
 
 @router.post("")
-async def create_flow(req: FlowCreate):
+async def create_flow(req: FlowCreate, user: AuthUser = Depends(get_current_user)):
     row = sb.table("scheduled_flows").insert({
         "workspace_id": req.workspace_id,
         "name": req.name,
@@ -26,7 +29,7 @@ async def create_flow(req: FlowCreate):
 
 
 @router.patch("/{flow_id}")
-async def update_flow(flow_id: str, req: FlowUpdate):
+async def update_flow(flow_id: str, req: FlowUpdate, user: AuthUser = Depends(get_current_user)):
     updates = req.model_dump(exclude_none=True)
     if not updates:
         raise HTTPException(400, "No hay campos para actualizar")
@@ -35,13 +38,13 @@ async def update_flow(flow_id: str, req: FlowUpdate):
 
 
 @router.delete("/{flow_id}")
-async def delete_flow(flow_id: str):
+async def delete_flow(flow_id: str, user: AuthUser = Depends(get_current_user)):
     sb.table("scheduled_flows").delete().eq("id", flow_id).execute()
     return {"ok": True}
 
 
 @router.post("/{flow_id}/run-now")
-async def run_flow_now(flow_id: str, bg: BackgroundTasks):
+async def run_flow_now(flow_id: str, bg: BackgroundTasks, user: AuthUser = Depends(get_current_user)):
     """Ejecutar un flujo manualmente creando una tarea."""
     flow = sb.table("scheduled_flows").select("*").eq("id", flow_id).single().execute().data
     if not flow:

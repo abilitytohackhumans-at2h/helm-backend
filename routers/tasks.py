@@ -1,26 +1,27 @@
-from fastapi import APIRouter, BackgroundTasks
+from fastapi import APIRouter, BackgroundTasks, Depends
 from models.task import TaskRequest, TaskResponse
 from config import settings
 from supabase import create_client
 from orchestrator import orchestrate
 from datetime import datetime, timezone
+from auth import AuthUser, get_current_user
 
 router = APIRouter()
 sb = create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_KEY)
 
 @router.post("", response_model=TaskResponse)
-async def create_task(req: TaskRequest, bg: BackgroundTasks):
-    # Crear tarea en DB
+async def create_task(req: TaskRequest, bg: BackgroundTasks, user: AuthUser = Depends(get_current_user)):
+    # Verify workspace access
+    from auth import require_workspace_access
+    await require_workspace_access(req.workspace_id, user)
+
     row = sb.table("tasks").insert({
         "workspace_id": req.workspace_id,
         "user_input": req.user_input,
         "status": "pending",
     }).execute()
     task = row.data[0]
-
-    # Orquestar en background
     bg.add_task(run_orchestration, task["id"], req.user_input, req.workspace_id)
-
     return TaskResponse(
         id=task["id"],
         workspace_id=task["workspace_id"],
@@ -45,22 +46,30 @@ async def run_orchestration(task_id: str, user_input: str, workspace_id: str):
         sb.table("tasks").update({"status": "failed", "result_json": {"error": str(e)}}).eq("id", task_id).execute()
 
 @router.get("")
-async def list_tasks(workspace_id: str, status: str | None = None, limit: int = 50):
+async def list_tasks(workspace_id: str, user: AuthUser = Depends(get_current_user), status: str | None = None, limit: int = 50):
+    from auth import require_workspace_access
+    await require_workspace_access(workspace_id, user)
+
     query = sb.table("tasks").select("*").eq("workspace_id", workspace_id).order("created_at", desc=True).limit(limit)
     if status:
         query = query.eq("status", status)
     return query.execute().data
 
 @router.get("/{task_id}")
-async def get_task(task_id: str):
+async def get_task(task_id: str, user: AuthUser = Depends(get_current_user)):
     task = sb.table("tasks").select("*").eq("id", task_id).single().execute().data
+    if task:
+        from auth import require_workspace_access
+        await require_workspace_access(task["workspace_id"], user)
     subtasks = sb.table("subtasks").select("*").eq("task_id", task_id).order("priority").execute().data
     return {"task": task, "subtasks": subtasks}
 
-
 @router.delete("/{task_id}")
-async def delete_task(task_id: str):
-    """Delete a task and its subtasks + HITL requests."""
+async def delete_task(task_id: str, user: AuthUser = Depends(get_current_user)):
+    task = sb.table("tasks").select("workspace_id").eq("id", task_id).single().execute().data
+    if task:
+        from auth import require_workspace_access
+        await require_workspace_access(task["workspace_id"], user)
     sb.table("subtasks").delete().eq("task_id", task_id).execute()
     try:
         sb.table("hitl_requests").delete().eq("task_id", task_id).execute()

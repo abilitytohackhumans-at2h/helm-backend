@@ -2,42 +2,47 @@
 Notifications router — in-app notifications for super admins.
 Tracks events like new client registrations, task completions, etc.
 """
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from config import settings
 from supabase import create_client
+from auth import AuthUser, get_current_user
 
 router = APIRouter()
 sb = create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_KEY)
 
 
 @router.get("")
-async def list_notifications(user_id: str, limit: int = 20):
-    """Get notifications for a user (most recent first)."""
+async def list_notifications(user: AuthUser = Depends(get_current_user), limit: int = 20):
+    """Get notifications for the authenticated user."""
     return sb.table("notifications").select("*").eq(
-        "user_id", user_id
+        "user_id", user.user_id
     ).order("created_at", desc=True).limit(limit).execute().data
 
 
 @router.get("/unread-count")
-async def unread_count(user_id: str):
-    """Count unread notifications."""
+async def unread_count(user: AuthUser = Depends(get_current_user)):
+    """Count unread notifications for the authenticated user."""
     result = sb.table("notifications").select("id", count="exact").eq(
-        "user_id", user_id
+        "user_id", user.user_id
     ).eq("read", False).execute()
     return {"count": result.count or 0}
 
 
 @router.patch("/{notification_id}/read")
-async def mark_read(notification_id: str):
-    """Mark a notification as read."""
-    sb.table("notifications").update({"read": True}).eq("id", notification_id).execute()
+async def mark_read(notification_id: str, user: AuthUser = Depends(get_current_user)):
+    """Mark a notification as read (only if it belongs to the user)."""
+    sb.table("notifications").update({"read": True}).eq(
+        "id", notification_id
+    ).eq("user_id", user.user_id).execute()
     return {"ok": True}
 
 
 @router.post("/mark-all-read")
-async def mark_all_read(user_id: str):
-    """Mark all notifications as read for a user."""
-    sb.table("notifications").update({"read": True}).eq("user_id", user_id).eq("read", False).execute()
+async def mark_all_read(user: AuthUser = Depends(get_current_user)):
+    """Mark all notifications as read for the authenticated user."""
+    sb.table("notifications").update({"read": True}).eq(
+        "user_id", user.user_id
+    ).eq("read", False).execute()
     return {"ok": True}
 
 
@@ -53,7 +58,7 @@ def create_notification(user_id: str, title: str, message: str, type: str = "inf
             "read": False,
         }).execute()
     except Exception:
-        pass  # Don't break flow if notification fails
+        pass
 
 
 def notify_super_admins(title: str, message: str, type: str = "info", link: str | None = None):

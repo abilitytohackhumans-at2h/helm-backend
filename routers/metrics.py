@@ -1,7 +1,8 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from config import settings
 from supabase import create_client
 from datetime import datetime, timedelta, timezone
+from auth import AuthUser, get_current_user
 
 router = APIRouter()
 sb = create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_KEY)
@@ -10,7 +11,7 @@ PERIOD_DAYS = {"7d": 7, "30d": 30, "90d": 90}
 
 
 @router.get("/summary")
-async def summary(workspace_id: str, period: str = "7d"):
+async def summary(workspace_id: str, user: AuthUser = Depends(get_current_user), period: str = "7d"):
     tasks = sb.table("tasks").select("*").eq("workspace_id", workspace_id).execute().data
 
     completed = len([t for t in tasks if t["status"] == "completed"])
@@ -29,7 +30,7 @@ async def summary(workspace_id: str, period: str = "7d"):
 
 
 @router.get("/by-agent")
-async def by_agent(workspace_id: str):
+async def by_agent(workspace_id: str, user: AuthUser = Depends(get_current_user)):
     subtasks = sb.table("subtasks").select("agent_slug, tokens_used, status").execute().data
 
     agents: dict[str, dict] = {}
@@ -48,7 +49,7 @@ async def by_agent(workspace_id: str):
 
 
 @router.get("/by-day")
-async def by_day(workspace_id: str, period: str = "30d"):
+async def by_day(workspace_id: str, user: AuthUser = Depends(get_current_user), period: str = "30d"):
     """Tasks and tokens grouped by day."""
     days = PERIOD_DAYS.get(period, 30)
     since = datetime.now(timezone.utc) - timedelta(days=days)
@@ -89,7 +90,7 @@ async def by_day(workspace_id: str, period: str = "30d"):
 
 
 @router.get("/top-tasks")
-async def top_tasks(workspace_id: str, limit: int = 5):
+async def top_tasks(workspace_id: str, user: AuthUser = Depends(get_current_user), limit: int = 5):
     """Most expensive tasks by tokens."""
     tasks = sb.table("tasks").select(
         "id, user_input, tokens_used, status, created_at, assigned_agents"

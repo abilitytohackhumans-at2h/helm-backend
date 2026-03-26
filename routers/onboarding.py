@@ -3,10 +3,11 @@ Self-service onboarding router.
 Allows new users (already signed up via Supabase Auth) to create their
 workspace, profile, and initial agents without admin intervention.
 """
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from config import settings
 from supabase import create_client
+from auth import AuthUser, get_current_user
 from routers.notifications import notify_super_admins
 
 router = APIRouter()
@@ -93,14 +94,13 @@ class SelfOnboardRequest(BaseModel):
 # ═══════════════════════════════════════════════════
 
 @router.post("/self-service")
-async def self_service_onboard(req: SelfOnboardRequest, user_id: str = ""):
+async def self_service_onboard(req: SelfOnboardRequest, user: AuthUser = Depends(get_current_user)):
     """
     Self-service onboarding for new users.
     The user already exists in Supabase Auth (signed up via frontend).
     This creates: profile + workspace + workspace_member + agents.
     """
-    if not user_id:
-        raise HTTPException(400, "user_id is required")
+    user_id = user.user_id
 
     # 1. Check user doesn't already have a workspace
     existing = sb.table("workspaces").select("id").eq("owner_id", user_id).execute().data

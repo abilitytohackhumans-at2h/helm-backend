@@ -2,10 +2,12 @@
 Admin router — Super Admin operations.
 Manage workspaces, agent templates, and deploy custom agents per client.
 """
-from fastapi import APIRouter, HTTPException
+import secrets
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from config import settings
 from supabase import create_client
+from auth import AuthUser, require_super_admin
 
 router = APIRouter()
 sb = create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_KEY)
@@ -64,7 +66,7 @@ class OnboardRequest(BaseModel):
 
 
 @router.post("/onboard")
-async def onboard_client(req: OnboardRequest):
+async def onboard_client(req: OnboardRequest, admin: AuthUser = Depends(require_super_admin)):
     """Full onboarding: create user + workspace + agents in one go."""
     # 1. Create user in Supabase Auth
     try:
@@ -157,7 +159,7 @@ async def onboard_client(req: OnboardRequest):
 
 
 @router.get("/overview")
-async def global_overview():
+async def global_overview(admin: AuthUser = Depends(require_super_admin)):
     """Global metrics across all workspaces for super admin dashboard."""
     workspaces = sb.table("workspaces").select("*").execute().data
     all_tasks = sb.table("tasks").select("id, workspace_id, status, tokens_used, cost_usd, created_at").execute().data
@@ -219,7 +221,7 @@ async def global_overview():
 
 
 @router.get("/workspaces")
-async def list_workspaces(owner_id: str | None = None):
+async def list_workspaces(admin: AuthUser = Depends(require_super_admin), owner_id: str | None = None):
     """List all workspaces (optionally filtered by owner)."""
     query = sb.table("workspaces").select("*, workspace_members(role, user_id)")
     if owner_id:
@@ -237,7 +239,7 @@ async def list_workspaces(owner_id: str | None = None):
 
 
 @router.post("/workspaces")
-async def create_workspace(req: WorkspaceCreate):
+async def create_workspace(req: WorkspaceCreate, admin: AuthUser = Depends(require_super_admin)):
     """Create a new client workspace."""
     row = sb.table("workspaces").insert({
         "name": req.name,
@@ -261,7 +263,7 @@ async def create_workspace(req: WorkspaceCreate):
 
 
 @router.delete("/workspaces/{workspace_id}")
-async def delete_workspace(workspace_id: str, delete_user: bool = False):
+async def delete_workspace(workspace_id: str, admin: AuthUser = Depends(require_super_admin), delete_user: bool = False):
     """Delete a workspace and all its data. Optionally delete the owner user too."""
     # Get workspace info first
     ws = sb.table("workspaces").select("owner_id").eq("id", workspace_id).single().execute().data
@@ -309,7 +311,7 @@ async def delete_workspace(workspace_id: str, delete_user: bool = False):
 
 
 @router.patch("/workspaces/{workspace_id}")
-async def update_workspace(workspace_id: str, updates: dict):
+async def update_workspace(workspace_id: str, updates: dict, admin: AuthUser = Depends(require_super_admin)):
     """Update workspace settings."""
     allowed = {"name", "primary_color", "max_agents", "max_tasks_month", "logo_url", "plan"}
     filtered = {k: v for k, v in updates.items() if k in allowed}
@@ -323,13 +325,13 @@ async def update_workspace(workspace_id: str, updates: dict):
 # ═══════════════════════════════════════════════════
 
 @router.get("/workspaces/{workspace_id}/agents")
-async def list_workspace_agents(workspace_id: str):
+async def list_workspace_agents(workspace_id: str, admin: AuthUser = Depends(require_super_admin)):
     """List all agents in a workspace."""
     return sb.table("agents").select("*").eq("workspace_id", workspace_id).order("created_at").execute().data
 
 
 @router.post("/workspaces/{workspace_id}/agents")
-async def create_agent(workspace_id: str, req: AgentCreate):
+async def create_agent(workspace_id: str, req: AgentCreate, admin: AuthUser = Depends(require_super_admin)):
     """Create a custom agent for this workspace."""
     # Check workspace limits
     ws = sb.table("workspaces").select("max_agents").eq("id", workspace_id).single().execute().data
@@ -353,7 +355,7 @@ async def create_agent(workspace_id: str, req: AgentCreate):
 
 
 @router.post("/workspaces/{workspace_id}/agents/from-template")
-async def create_agent_from_template(workspace_id: str, req: AgentFromTemplate):
+async def create_agent_from_template(workspace_id: str, req: AgentFromTemplate, admin: AuthUser = Depends(require_super_admin)):
     """Clone an agent from a template into this workspace."""
     template = sb.table("agent_templates").select("*").eq("id", req.template_id).single().execute().data
     if not template:
@@ -380,7 +382,7 @@ async def create_agent_from_template(workspace_id: str, req: AgentFromTemplate):
 
 
 @router.delete("/workspaces/{workspace_id}/agents/{agent_id}")
-async def delete_agent(workspace_id: str, agent_id: str):
+async def delete_agent(workspace_id: str, agent_id: str, admin: AuthUser = Depends(require_super_admin)):
     """Remove an agent from a workspace."""
     sb.table("agents").delete().eq("id", agent_id).eq("workspace_id", workspace_id).execute()
     return {"ok": True}
@@ -401,7 +403,7 @@ async def list_templates(owner_id: str | None = None):
 
 
 @router.post("/templates")
-async def create_template(req: TemplateCreate):
+async def create_template(req: TemplateCreate, admin: AuthUser = Depends(require_super_admin)):
     """Create a new agent template."""
     row = sb.table("agent_templates").insert({
         "name": req.name,
@@ -418,7 +420,7 @@ async def create_template(req: TemplateCreate):
 
 
 @router.patch("/templates/{template_id}")
-async def update_template(template_id: str, updates: dict):
+async def update_template(template_id: str, updates: dict, admin: AuthUser = Depends(require_super_admin)):
     """Update an agent template."""
     allowed = {"name", "system_prompt", "tools_enabled", "description", "icon", "color", "is_public", "category"}
     filtered = {k: v for k, v in updates.items() if k in allowed}
@@ -426,7 +428,7 @@ async def update_template(template_id: str, updates: dict):
 
 
 @router.delete("/templates/{template_id}")
-async def delete_template(template_id: str):
+async def delete_template(template_id: str, admin: AuthUser = Depends(require_super_admin)):
     """Delete an agent template."""
     sb.table("agent_templates").delete().eq("id", template_id).execute()
     return {"ok": True}
@@ -446,7 +448,7 @@ class MemberRoleUpdate(BaseModel):
 
 
 @router.get("/workspaces/{workspace_id}/members")
-async def list_workspace_members(workspace_id: str):
+async def list_workspace_members(workspace_id: str, admin: AuthUser = Depends(require_super_admin)):
     """List all members of a workspace with profile info."""
     members = sb.table("workspace_members").select(
         "user_id, role, created_at"
@@ -494,7 +496,7 @@ async def list_workspace_members(workspace_id: str):
 
 
 @router.post("/workspaces/{workspace_id}/members")
-async def invite_member(workspace_id: str, req: MemberInvite):
+async def invite_member(workspace_id: str, req: MemberInvite, admin: AuthUser = Depends(require_super_admin)):
     """Invite a member to a workspace. Creates user if email doesn't exist."""
     valid_roles = {"owner", "admin", "editor", "viewer"}
     if req.role not in valid_roles:
@@ -513,7 +515,7 @@ async def invite_member(workspace_id: str, req: MemberInvite):
 
     if not user_id:
         # Create new user
-        password = req.password or req.email.split("@")[0] + "2026!"
+        password = req.password or secrets.token_urlsafe(12)
         try:
             user_response = sb.auth.admin.create_user({
                 "email": req.email,
@@ -550,7 +552,7 @@ async def invite_member(workspace_id: str, req: MemberInvite):
 
 
 @router.patch("/workspaces/{workspace_id}/members/{user_id}")
-async def update_member_role(workspace_id: str, user_id: str, req: MemberRoleUpdate):
+async def update_member_role(workspace_id: str, user_id: str, req: MemberRoleUpdate, admin: AuthUser = Depends(require_super_admin)):
     """Change a member's role. Cannot change the workspace owner."""
     valid_roles = {"owner", "admin", "editor", "viewer"}
     if req.role not in valid_roles:
@@ -569,7 +571,7 @@ async def update_member_role(workspace_id: str, user_id: str, req: MemberRoleUpd
 
 
 @router.delete("/workspaces/{workspace_id}/members/{user_id}")
-async def remove_member(workspace_id: str, user_id: str):
+async def remove_member(workspace_id: str, user_id: str, admin: AuthUser = Depends(require_super_admin)):
     """Remove a member from a workspace. Cannot remove the owner."""
     # Protect owner
     ws = sb.table("workspaces").select("owner_id").eq("id", workspace_id).single().execute().data

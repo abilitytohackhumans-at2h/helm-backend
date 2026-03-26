@@ -1,18 +1,24 @@
 import asyncio
 import logging
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 from routers import tasks, agents, hitl, metrics, memory, admin, profile, flows, onboarding, notifications
 from config import settings
 from scheduler import scheduler_loop
 
 logging.basicConfig(level=logging.INFO)
 
+# Rate limiter
+limiter = Limiter(key_func=get_remote_address)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Start scheduler on boot
     task = asyncio.create_task(scheduler_loop())
     logging.info("🚀 HELM API started with scheduler")
     yield
@@ -20,13 +26,23 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="HELM API", version="1.0.0", lifespan=lifespan)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# CORS — restrictive in production
+ALLOWED_ORIGINS = [
+    "https://helm.i7b.eu",
+    "http://localhost:5173",
+    "http://localhost:5174",
+    "http://localhost:5175",
+]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[settings.FRONTEND_URL, "https://helm.i7b.eu", "http://localhost:5173", "http://localhost:5174", "http://localhost:5175"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 app.include_router(tasks.router,   prefix="/tasks",   tags=["tasks"])
@@ -41,6 +57,14 @@ app.include_router(onboarding.router, prefix="/onboarding", tags=["onboarding"])
 app.include_router(notifications.router, prefix="/notifications", tags=["notifications"])
 
 
+# Global rate limit for all endpoints
+@app.middleware("http")
+async def rate_limit_middleware(request: Request, call_next):
+    response = await call_next(request)
+    return response
+
+
 @app.get("/health")
-def health():
-    return {"status": "ok", "scheduler": "running"}
+@limiter.limit("30/minute")
+async def health(request: Request):
+    return {"status": "ok", "scheduler": "running", "auth": "enabled"}

@@ -186,27 +186,35 @@ async def save_api_key(
     if not body.api_key or len(body.api_key) < 5:
         raise HTTPException(status_code=400, detail="API key invalida")
 
-    encrypted = encrypt_token(body.api_key)
+    try:
+        encrypted = encrypt_token(body.api_key)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error encriptando: {str(e)[:100]}")
 
-    existing = sb.table("workspace_integrations").select("id").eq(
-        "workspace_id", body.workspace_id
-    ).eq("provider", body.provider).execute().data
+    try:
+        existing = sb.table("workspace_integrations").select("id").eq(
+            "workspace_id", body.workspace_id
+        ).eq("provider", body.provider).execute().data
 
-    data = {
-        "workspace_id": body.workspace_id,
-        "provider": body.provider,
-        "access_token_encrypted": encrypted,
-        "is_active": True,
-        "updated_at": datetime.now(timezone.utc).isoformat(),
-        "metadata": {"type": "api_key"},
-    }
+        data = {
+            "workspace_id": body.workspace_id,
+            "provider": body.provider,
+            "access_token_encrypted": encrypted,
+            "is_active": True,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "metadata": {"type": "api_key"},
+        }
 
-    if existing:
-        sb.table("workspace_integrations").update(data).eq("id", existing[0]["id"]).execute()
-    else:
-        sb.table("workspace_integrations").insert(data).execute()
+        if existing:
+            sb.table("workspace_integrations").update(data).eq("id", existing[0]["id"]).execute()
+        else:
+            sb.table("workspace_integrations").insert(data).execute()
 
-    return {"connected": True, "provider": body.provider}
+        return {"connected": True, "provider": body.provider}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error guardando: {str(e)[:100]}")
 
 
 @router.delete("/api-key")

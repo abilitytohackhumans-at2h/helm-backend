@@ -1,11 +1,13 @@
 """
 Admin Analytics & Activity Log — advanced metrics for super admin dashboard.
 """
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, HTTPException, Depends
+from pydantic import BaseModel
 from config import settings
 from supabase import create_client
 from auth import AuthUser, require_super_admin
 from datetime import datetime, timezone, timedelta
+import secrets
 
 router = APIRouter()
 sb = create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_KEY)
@@ -157,3 +159,69 @@ async def system_stats(admin: AuthUser = Depends(require_super_admin)):
         "super_admins": len([p for p in profiles if p.get("is_super_admin")]),
         "plan_distribution": plan_dist,
     }
+
+
+# ═══════════════════════════════════════════════════
+# SUPER ADMIN MANAGEMENT
+# ═══════════════════════════════════════════════════
+
+class SuperAdminInvite(BaseModel):
+    email: str
+    password: str | None = None
+
+
+@router.get("/system/super-admins")
+async def list_super_admins(admin: AuthUser = Depends(require_super_admin)):
+    """List all super admin users."""
+    profiles = sb.table("profiles").select("id, email, full_name, avatar_url, is_super_admin").eq(
+        "is_super_admin", True
+    ).execute().data
+    return profiles
+
+
+@router.post("/system/super-admins")
+async def add_super_admin(req: SuperAdminInvite, admin: AuthUser = Depends(require_super_admin)):
+    """Add a new super admin. Creates user if email doesn't exist."""
+    # Check if user exists
+    user_id = None
+    try:
+        users = sb.auth.admin.list_users()
+        for u in users:
+            if u.email == req.email:
+                user_id = u.id
+                break
+    except Exception:
+        pass
+
+    if not user_id:
+        # Create new user
+        password = req.password or secrets.token_urlsafe(12)
+        try:
+            user_response = sb.auth.admin.create_user({
+                "email": req.email,
+                "password": password,
+                "email_confirm": True,
+            })
+            user_id = user_response.user.id
+        except Exception as e:
+            raise HTTPException(400, f"Error creating user: {str(e)}")
+
+    # Upsert profile with super_admin = True
+    sb.table("profiles").upsert({
+        "id": user_id,
+        "email": req.email,
+        "full_name": req.email.split("@")[0],
+        "is_super_admin": True,
+    }).execute()
+
+    return {"user_id": user_id, "email": req.email, "is_super_admin": True}
+
+
+@router.delete("/system/super-admins/{user_id}")
+async def remove_super_admin(user_id: str, admin: AuthUser = Depends(require_super_admin)):
+    """Revoke super admin from a user. Cannot remove yourself."""
+    if user_id == admin.user_id:
+        raise HTTPException(400, "No puedes quitarte super admin a ti mismo")
+
+    sb.table("profiles").update({"is_super_admin": False}).eq("id", user_id).execute()
+    return {"ok": True}

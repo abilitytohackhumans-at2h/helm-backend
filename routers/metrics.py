@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends
 from config import settings
 from supabase import create_client
 from datetime import datetime, timedelta, timezone
-from auth import AuthUser, get_current_user
+from auth import AuthUser, get_current_user, require_workspace_access
 
 router = APIRouter()
 sb = create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_KEY)
@@ -12,6 +12,7 @@ PERIOD_DAYS = {"7d": 7, "30d": 30, "90d": 90}
 
 @router.get("/summary")
 async def summary(workspace_id: str, user: AuthUser = Depends(get_current_user), period: str = "7d"):
+    await require_workspace_access(workspace_id, user)
     tasks = sb.table("tasks").select("*").eq("workspace_id", workspace_id).execute().data
 
     completed = len([t for t in tasks if t["status"] == "completed"])
@@ -31,7 +32,13 @@ async def summary(workspace_id: str, user: AuthUser = Depends(get_current_user),
 
 @router.get("/by-agent")
 async def by_agent(workspace_id: str, user: AuthUser = Depends(get_current_user)):
-    subtasks = sb.table("subtasks").select("agent_slug, tokens_used, status").execute().data
+    await require_workspace_access(workspace_id, user)
+    # Filter subtasks by workspace via their parent task
+    task_ids_res = sb.table("tasks").select("id").eq("workspace_id", workspace_id).execute().data
+    task_ids = [t["id"] for t in task_ids_res]
+    if not task_ids:
+        return []
+    subtasks = sb.table("subtasks").select("agent_slug, tokens_used, status").in_("task_id", task_ids).execute().data
 
     agents: dict[str, dict] = {}
     for st in subtasks:
@@ -50,6 +57,7 @@ async def by_agent(workspace_id: str, user: AuthUser = Depends(get_current_user)
 
 @router.get("/by-day")
 async def by_day(workspace_id: str, user: AuthUser = Depends(get_current_user), period: str = "30d"):
+    await require_workspace_access(workspace_id, user)
     """Tasks and tokens grouped by day."""
     days = PERIOD_DAYS.get(period, 30)
     since = datetime.now(timezone.utc) - timedelta(days=days)
@@ -91,6 +99,7 @@ async def by_day(workspace_id: str, user: AuthUser = Depends(get_current_user), 
 
 @router.get("/top-tasks")
 async def top_tasks(workspace_id: str, user: AuthUser = Depends(get_current_user), limit: int = 5):
+    await require_workspace_access(workspace_id, user)
     """Most expensive tasks by tokens."""
     tasks = sb.table("tasks").select(
         "id, user_input, tokens_used, status, created_at, assigned_agents"

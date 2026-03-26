@@ -17,7 +17,7 @@ class BaseAgent:
 
         while True:
             kwargs: dict[str, Any] = {
-                "model": "claude-sonnet-4-20250514",
+                "model": settings.MODEL_NAME,
                 "max_tokens": 4096,
                 "system": self.system_prompt,
                 "messages": messages,

@@ -175,7 +175,7 @@ async def orchestrate(user_input: str, workspace_id: str, task_id: str) -> dict:
 
     # 1. Plan
     plan_response = client.messages.create(
-        model="claude-sonnet-4-20250514",
+        model=settings.MODEL_NAME,
         max_tokens=1000,
         system=orchestrator_prompt,
         messages=[{"role": "user", "content": enriched_input}]

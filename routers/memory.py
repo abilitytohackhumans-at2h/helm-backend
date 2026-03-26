@@ -3,7 +3,7 @@ from pydantic import BaseModel
 from typing import Optional
 from config import settings
 from supabase import create_client
-from auth import AuthUser, get_current_user
+from auth import AuthUser, get_current_user, require_workspace_access
 
 router = APIRouter()
 sb = create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_KEY)
@@ -40,6 +40,7 @@ class ClientUpdate(BaseModel):
 
 @router.get("/projects")
 async def list_projects(workspace_id: str, user: AuthUser = Depends(get_current_user)):
+    await require_workspace_access(workspace_id, user)
     return sb.table("memory_projects").select("*").eq(
         "workspace_id", workspace_id
     ).order("created_at", desc=True).execute().data
@@ -47,6 +48,7 @@ async def list_projects(workspace_id: str, user: AuthUser = Depends(get_current_
 
 @router.post("/projects")
 async def create_project(body: ProjectCreate, user: AuthUser = Depends(get_current_user)):
+    await require_workspace_access(body.workspace_id, user)
     row = sb.table("memory_projects").insert({
         "workspace_id": body.workspace_id,
         "name": body.name,
@@ -75,6 +77,7 @@ async def delete_project(project_id: str, user: AuthUser = Depends(get_current_u
 
 @router.get("/clients")
 async def list_clients(workspace_id: str, user: AuthUser = Depends(get_current_user)):
+    await require_workspace_access(workspace_id, user)
     return sb.table("memory_clients").select("*").eq(
         "workspace_id", workspace_id
     ).order("created_at", desc=True).execute().data
@@ -82,6 +85,7 @@ async def list_clients(workspace_id: str, user: AuthUser = Depends(get_current_u
 
 @router.post("/clients")
 async def create_client_entry(body: ClientCreate, user: AuthUser = Depends(get_current_user)):
+    await require_workspace_access(body.workspace_id, user)
     row = sb.table("memory_clients").insert({
         "workspace_id": body.workspace_id,
         "name": body.name,

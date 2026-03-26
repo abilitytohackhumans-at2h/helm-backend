@@ -73,12 +73,15 @@ async def run_flow_orchestration(task_id: str, prompt: str, workspace_id: str):
     try:
         sb.table("tasks").update({"status": "running"}).eq("id", task_id).execute()
         result = await orchestrate(prompt, workspace_id, task_id)
+        total_tokens = sum(r.get("tokens_used", 0) for r in result.get("results", {}).values()) if result.get("results") else 0
+        cost_usd = round(total_tokens * 0.003 / 1000, 6)
         sb.table("tasks").update({
             "status": result.get("status", "completed"),
             "plan_json": result.get("plan"),
             "result_json": result.get("results"),
             "assigned_agents": list(result.get("results", {}).keys()) if result.get("results") else [],
-            "tokens_used": sum(r.get("tokens_used", 0) for r in result.get("results", {}).values()) if result.get("results") else 0,
+            "tokens_used": total_tokens,
+            "cost_usd": cost_usd,
             "completed_at": datetime.now(timezone.utc).isoformat(),
         }).eq("id", task_id).execute()
     except Exception as e:

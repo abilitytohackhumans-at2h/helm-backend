@@ -3,6 +3,7 @@ Image generation tools for HELM agents.
 Supports Freepik API and DALL-E (OpenAI) as providers.
 Each workspace stores its own API keys in workspace_integrations.
 """
+import anthropic
 import base64
 import httpx
 import logging
@@ -178,6 +179,45 @@ async def _poll_async_task(key: str, task_id: str, max_wait: int = 120) -> dict 
     return None
 
 
+async def _enhance_prompt(original_prompt: str, style: str = "", model: str = "") -> str:
+    """Use Claude to enhance a simple prompt into a professional image generation prompt."""
+    try:
+        client = anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY)
+        style_hint = f"\nEstilo solicitado: {style}" if style else ""
+        model_hint = f"\nModelo: {model}" if model else ""
+
+        response = client.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=300,
+            messages=[{
+                "role": "user",
+                "content": f"""Eres un experto en prompt engineering para generacion de imagenes con IA.
+Mejora este prompt del usuario para obtener la mejor imagen posible.
+
+REGLAS:
+- Escribe el prompt mejorado SOLO en ingles (los modelos funcionan mejor en ingles)
+- Añade detalles de composicion, iluminacion, textura, atmosfera y calidad tecnica
+- Mantén la intencion original del usuario
+- Se conciso pero descriptivo (max 150 palabras)
+- NO añadas texto explicativo, SOLO devuelve el prompt mejorado
+- Si el usuario pide un logo o texto, enfatiza "clean typography, vector style, centered composition"
+{style_hint}{model_hint}
+
+Prompt original del usuario: {original_prompt}
+
+Prompt mejorado:"""
+            }]
+        )
+        enhanced = response.content[0].text.strip()
+        # Sanity check — si es demasiado corto o parece un error, usar original
+        if len(enhanced) < 10:
+            return original_prompt
+        return enhanced
+    except Exception as e:
+        logger.warning(f"Prompt enhancement failed: {e}")
+        return original_prompt
+
+
 async def freepik_generate(workspace_id: str, inputs: dict) -> str:
     """Generate images using Freepik AI API."""
     key = await _get_freepik_key(workspace_id)
@@ -196,6 +236,13 @@ async def freepik_generate(workspace_id: str, inputs: dict) -> str:
     guidance_scale = inputs.get("guidance_scale", 1.0)
     seed = inputs.get("seed", None)
     colors = inputs.get("colors", [])
+    enhance = inputs.get("enhance_prompt", True)
+
+    # Auto-enhance the prompt with Claude
+    original_prompt = prompt
+    if enhance:
+        prompt = await _enhance_prompt(prompt, style=style, model=model)
+        logger.info(f"Prompt enhanced: '{original_prompt}' -> '{prompt}'")
 
     body = {
         "prompt": prompt,
@@ -268,9 +315,13 @@ async def freepik_generate(workspace_id: str, inputs: dict) -> str:
         model_cost = model_info["cost"]
         header = f"✅ IMAGEN GENERADA CON EXITO via Freepik AI\n"
         header += f"Modelo: {model_name} ({model_info['description']}) | Coste: {model_cost}\n"
-        header += f"Prompt: {prompt}\n"
+        if enhance and original_prompt != prompt:
+            header += f"Prompt original: {original_prompt}\n"
+            header += f"Prompt mejorado: {prompt}\n"
+        else:
+            header += f"Prompt: {prompt}\n"
         header += f"Tamaño: {img_size.get('width', '?')}x{img_size.get('height', '?')}px | Seed: {seed}\n\n"
-        header += "IMPORTANTE: Incluye SIEMPRE las URLs completas de las imagenes en tu respuesta para que el usuario pueda verlas.\n\n"
+        header += "IMPORTANTE: Incluye SIEMPRE las URLs completas de las imagenes en tu respuesta. Muestra tanto el prompt original como el mejorado al usuario.\n\n"
 
         return header + "\n".join(results)
 
@@ -410,6 +461,11 @@ FREEPIK_GENERATE_TOOL = {
                 "type": "array",
                 "items": {"type": "string"},
                 "description": "Colores dominantes en formato hex. Ejemplo: ['#7F77DD', '#3B82F6', '#000000']. Max 5 colores."
+            },
+            "enhance_prompt": {
+                "type": "boolean",
+                "description": "Mejora automaticamente el prompt del usuario con IA antes de generar (añade detalles de composicion, iluminacion, calidad). Default: true. Pon false si el usuario ya proporciona un prompt muy detallado en ingles.",
+                "default": True
             }
         },
         "required": ["prompt"]

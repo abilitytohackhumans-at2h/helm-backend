@@ -5,7 +5,7 @@ Checks every 60 seconds for flows that need to execute.
 """
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from config import settings
 from supabase import create_client
 from orchestrator import orchestrate
@@ -126,13 +126,56 @@ async def execute_flow(flow: dict):
             pass
 
 
+async def refresh_expiring_tokens():
+    """Refresh Instagram tokens expiring within 5 days."""
+    try:
+        from services.instagram import refresh_long_lived_token
+        from utils.encryption import encrypt_token, decrypt_token
+
+        cutoff = (datetime.now(timezone.utc) + timedelta(days=5)).isoformat()
+        rows = sb.table("workspace_integrations").select("*").eq(
+            "provider", "instagram"
+        ).eq("is_active", True).lt("token_expires_at", cutoff).execute().data
+
+        for row in rows:
+            try:
+                old_token = decrypt_token(row["access_token_encrypted"])
+                result = await refresh_long_lived_token(old_token)
+                new_expires = datetime.now(timezone.utc) + timedelta(seconds=result["expires_in"])
+
+                sb.table("workspace_integrations").update({
+                    "access_token_encrypted": encrypt_token(result["access_token"]),
+                    "token_expires_at": new_expires.isoformat(),
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                }).eq("id", row["id"]).execute()
+
+                logger.info(f"🔄 Refreshed Instagram token for workspace {row['workspace_id']}")
+            except Exception as e:
+                logger.error(f"❌ Failed to refresh token for workspace {row['workspace_id']}: {e}")
+                # If refresh fails, mark as inactive so user gets notified to reconnect
+                if "expired" in str(e).lower() or "invalid" in str(e).lower():
+                    sb.table("workspace_integrations").update({
+                        "is_active": False,
+                        "updated_at": datetime.now(timezone.utc).isoformat(),
+                    }).eq("id", row["id"]).execute()
+
+    except Exception as e:
+        logger.error(f"Token refresh error: {e}")
+
+
 async def scheduler_loop():
     """Main scheduler loop — checks for due flows every 60 seconds."""
     logger.info("🕐 HELM Scheduler started")
+    last_token_refresh = datetime.min.replace(tzinfo=timezone.utc)
 
     while True:
         try:
             now = datetime.now(timezone.utc)
+
+            # Refresh tokens once per hour
+            if (now - last_token_refresh).total_seconds() > 3600:
+                await refresh_expiring_tokens()
+                last_token_refresh = now
 
             # Get all active flows with cron expressions
             flows = sb.table("scheduled_flows").select("*").eq(

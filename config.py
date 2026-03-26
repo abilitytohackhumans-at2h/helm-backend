@@ -8,6 +8,9 @@ class Settings(BaseSettings):
     BRAVE_SEARCH_API_KEY: str = ""
     GMAIL_CREDENTIALS_JSON: str = ""
     NOTION_API_KEY: str = ""
+    FACEBOOK_APP_ID: str = ""
+    FACEBOOK_APP_SECRET: str = ""
+    ENCRYPTION_KEY: str = ""  # Fernet key for token encryption
     FRONTEND_URL: str = "http://localhost:5173"
     MODEL_NAME: str = "claude-sonnet-4-20250514"
 

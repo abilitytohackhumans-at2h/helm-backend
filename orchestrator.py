@@ -61,6 +61,7 @@ def get_agent_map(workspace_id: str) -> dict[str, DynamicAgent]:
             name=a["name"],
             system_prompt=a["system_prompt"],
             tools_enabled=a.get("tools_enabled") or [],
+            workspace_id=workspace_id,
         )
     return agent_map
 

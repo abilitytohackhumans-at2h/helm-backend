@@ -130,9 +130,10 @@ async def freepik_generate(workspace_id: str, inputs: dict) -> str:
         seed = meta.get("seed", "N/A")
         img_size = meta.get("image", {})
 
-        header = f"Imagenes generadas con Freepik AI\n"
+        header = f"✅ IMAGEN GENERADA CON EXITO via Freepik AI\n"
         header += f"Prompt: {prompt}\n"
         header += f"Tamaño: {img_size.get('width', '?')}x{img_size.get('height', '?')}px | Seed: {seed}\n\n"
+        header += "IMPORTANTE: Incluye SIEMPRE las URLs completas de las imagenes en tu respuesta para que el usuario pueda verlas.\n\n"
 
         return header + "\n".join(results)
 
@@ -209,7 +210,7 @@ async def dalle_generate(workspace_id: str, inputs: dict) -> str:
         if not results:
             return "DALL-E no devolvio imagenes. Intenta con un prompt diferente."
 
-        return f"Imagen generada con DALL-E 3\nPrompt: {prompt}\nTamaño: {size}\n\n" + "\n".join(results)
+        return f"✅ IMAGEN GENERADA CON EXITO via DALL-E 3\nPrompt: {prompt}\nTamaño: {size}\n\nIMPORTANTE: Incluye SIEMPRE las URLs completas de las imagenes en tu respuesta para que el usuario pueda verlas.\n\n" + "\n".join(results)
 
     except httpx.HTTPStatusError as e:
         if e.response.status_code == 401:

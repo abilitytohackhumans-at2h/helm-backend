@@ -423,3 +423,141 @@ async def update_template(template_id: str, updates: dict):
     allowed = {"name", "system_prompt", "tools_enabled", "description", "icon", "color", "is_public", "category"}
     filtered = {k: v for k, v in updates.items() if k in allowed}
     return sb.table("agent_templates").update(filtered).eq("id", template_id).execute().data
+
+
+# ═══════════════════════════════════════════════════
+# WORKSPACE MEMBERS
+# ═══════════════════════════════════════════════════
+
+class MemberInvite(BaseModel):
+    email: str
+    role: str = "editor"
+    password: str | None = None
+
+class MemberRoleUpdate(BaseModel):
+    role: str
+
+
+@router.get("/workspaces/{workspace_id}/members")
+async def list_workspace_members(workspace_id: str):
+    """List all members of a workspace with profile info."""
+    members = sb.table("workspace_members").select(
+        "user_id, role, created_at"
+    ).eq("workspace_id", workspace_id).execute().data
+
+    # Enrich with profile info
+    result = []
+    for m in members:
+        try:
+            profile = sb.table("profiles").select(
+                "email, full_name, avatar_url"
+            ).eq("id", m["user_id"]).single().execute().data
+            result.append({
+                "user_id": m["user_id"],
+                "email": profile.get("email", ""),
+                "full_name": profile.get("full_name", ""),
+                "avatar_url": profile.get("avatar_url"),
+                "role": m["role"],
+                "created_at": m["created_at"],
+            })
+        except Exception:
+            result.append({
+                "user_id": m["user_id"],
+                "email": "unknown",
+                "full_name": "",
+                "avatar_url": None,
+                "role": m["role"],
+                "created_at": m["created_at"],
+            })
+
+    return result
+
+
+@router.post("/workspaces/{workspace_id}/members")
+async def invite_member(workspace_id: str, req: MemberInvite):
+    """Invite a member to a workspace. Creates user if email doesn't exist."""
+    valid_roles = {"owner", "admin", "editor", "viewer"}
+    if req.role not in valid_roles:
+        raise HTTPException(400, f"Invalid role. Must be one of: {valid_roles}")
+
+    # Check if user already exists in Supabase Auth
+    user_id = None
+    try:
+        users = sb.auth.admin.list_users()
+        for u in users:
+            if u.email == req.email:
+                user_id = u.id
+                break
+    except Exception:
+        pass
+
+    if not user_id:
+        # Create new user
+        password = req.password or req.email.split("@")[0] + "2026!"
+        try:
+            user_response = sb.auth.admin.create_user({
+                "email": req.email,
+                "password": password,
+                "email_confirm": True,
+            })
+            user_id = user_response.user.id
+        except Exception as e:
+            raise HTTPException(400, f"Error creating user: {str(e)}")
+
+        # Create profile
+        sb.table("profiles").upsert({
+            "id": user_id,
+            "email": req.email,
+            "full_name": req.email.split("@")[0],
+            "is_super_admin": False,
+        }).execute()
+
+    # Check not already a member
+    existing = sb.table("workspace_members").select("id").eq(
+        "workspace_id", workspace_id
+    ).eq("user_id", user_id).execute().data
+    if existing:
+        raise HTTPException(409, "User is already a member of this workspace")
+
+    # Add as member
+    sb.table("workspace_members").insert({
+        "workspace_id": workspace_id,
+        "user_id": user_id,
+        "role": req.role,
+    }).execute()
+
+    return {"user_id": user_id, "email": req.email, "role": req.role, "created": not bool(user_id)}
+
+
+@router.patch("/workspaces/{workspace_id}/members/{user_id}")
+async def update_member_role(workspace_id: str, user_id: str, req: MemberRoleUpdate):
+    """Change a member's role. Cannot change the workspace owner."""
+    valid_roles = {"owner", "admin", "editor", "viewer"}
+    if req.role not in valid_roles:
+        raise HTTPException(400, f"Invalid role. Must be one of: {valid_roles}")
+
+    # Check if user is owner — protect owner role
+    ws = sb.table("workspaces").select("owner_id").eq("id", workspace_id).single().execute().data
+    if ws and ws["owner_id"] == user_id:
+        raise HTTPException(403, "Cannot change the workspace owner's role")
+
+    sb.table("workspace_members").update(
+        {"role": req.role}
+    ).eq("workspace_id", workspace_id).eq("user_id", user_id).execute()
+
+    return {"ok": True, "role": req.role}
+
+
+@router.delete("/workspaces/{workspace_id}/members/{user_id}")
+async def remove_member(workspace_id: str, user_id: str):
+    """Remove a member from a workspace. Cannot remove the owner."""
+    # Protect owner
+    ws = sb.table("workspaces").select("owner_id").eq("id", workspace_id).single().execute().data
+    if ws and ws["owner_id"] == user_id:
+        raise HTTPException(403, "Cannot remove the workspace owner")
+
+    sb.table("workspace_members").delete().eq(
+        "workspace_id", workspace_id
+    ).eq("user_id", user_id).execute()
+
+    return {"ok": True}

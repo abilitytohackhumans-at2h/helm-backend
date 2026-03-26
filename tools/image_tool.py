@@ -72,6 +72,73 @@ async def _upload_to_storage(image_bytes: bytes, filename: str, workspace_id: st
 
 # ─── Freepik Image Generation ───────────────────────────────────────
 
+# Model endpoints and info
+FREEPIK_MODELS = {
+    "classic": {
+        "endpoint": "/v1/ai/text-to-image",
+        "async": False,
+        "cost": "~1 credit",
+        "description": "Classic fast — rapido y versatil",
+    },
+    "mystic": {
+        "endpoint": "/v1/ai/mystic",
+        "async": True,
+        "cost": "~3-5 credits",
+        "description": "Mystic — ultra-realista, exclusivo de Freepik",
+    },
+    "flux-pro": {
+        "endpoint": "/v1/ai/flux/pro-1.1",
+        "async": True,
+        "cost": "~5 credits",
+        "description": "Flux Pro 1.1 — calidad premium",
+    },
+    "flux-turbo": {
+        "endpoint": "/v1/ai/flux/2/turbo",
+        "async": True,
+        "cost": "~2 credits",
+        "description": "Flux 2 Turbo — rapido y economico",
+    },
+    "flux-dev": {
+        "endpoint": "/v1/ai/flux/dev",
+        "async": True,
+        "cost": "~3 credits",
+        "description": "Flux Dev — detallado, alta calidad",
+    },
+    "hyperflux": {
+        "endpoint": "/v1/ai/flux/hyperflux",
+        "async": True,
+        "cost": "~1 credit",
+        "description": "HyperFlux — ultra-rapido (sub-segundo)",
+    },
+    "seedream": {
+        "endpoint": "/v1/ai/seedream/4.5",
+        "async": True,
+        "cost": "~2 credits",
+        "description": "Seedream 4.5 — ultimo modelo, alta calidad",
+    },
+}
+
+
+async def _poll_async_task(key: str, task_id: str, max_wait: int = 120) -> dict | None:
+    """Poll an async Freepik task until completion."""
+    import asyncio
+    poll_url = f"https://api.freepik.com/v1/ai/tasks/{task_id}"
+    headers = {"x-freepik-api-key": key}
+
+    for _ in range(max_wait // 3):
+        await asyncio.sleep(3)
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.get(poll_url, headers=headers)
+            if resp.status_code == 200:
+                data = resp.json()
+                status = data.get("status", "")
+                if status == "completed":
+                    return data
+                elif status in ("failed", "error"):
+                    return None
+    return None
+
+
 async def freepik_generate(workspace_id: str, inputs: dict) -> str:
     """Generate images using Freepik AI API."""
     key = await _get_freepik_key(workspace_id)
@@ -86,22 +153,36 @@ async def freepik_generate(workspace_id: str, inputs: dict) -> str:
     num_images = min(inputs.get("num_images", 1), 4)
     size = inputs.get("size", "square_1_1")
     style = inputs.get("style", "")
+    model = inputs.get("model", "")
+    guidance_scale = inputs.get("guidance_scale", 1.0)
+    seed = inputs.get("seed", None)
+    colors = inputs.get("colors", [])
 
     body = {
         "prompt": prompt,
         "num_images": num_images,
         "image": {"size": size},
+        "guidance_scale": guidance_scale,
         "filter_nsfw": True,
     }
     if negative_prompt:
         body["negative_prompt"] = negative_prompt
     if style:
-        body["styling"] = {"style": style}
+        body.setdefault("styling", {})["style"] = style
+    if colors:
+        body.setdefault("styling", {})["colors"] = [{"hex": c, "weight": 0.5} for c in colors[:5]]
+    if seed is not None:
+        body["seed"] = seed
+
+    # Select model endpoint
+    model_info = FREEPIK_MODELS.get(model, FREEPIK_MODELS["classic"])
+    endpoint = f"https://api.freepik.com{model_info['endpoint']}"
+    is_async = model_info["async"]
 
     try:
-        async with httpx.AsyncClient(timeout=60.0) as client:
+        async with httpx.AsyncClient(timeout=90.0) as client:
             resp = await client.post(
-                "https://api.freepik.com/v1/ai/text-to-image",
+                endpoint,
                 json=body,
                 headers={
                     "x-freepik-api-key": key,
@@ -111,8 +192,22 @@ async def freepik_generate(workspace_id: str, inputs: dict) -> str:
             resp.raise_for_status()
             data = resp.json()
 
+        # For async models, poll for completion
+        if is_async:
+            task_id = data.get("task_id") or data.get("id") or data.get("data", {}).get("task_id")
+            if task_id:
+                poll_result = await _poll_async_task(key, task_id)
+                if poll_result:
+                    data = poll_result
+                else:
+                    return f"[Freepik] La generacion con modelo '{model or 'classic'}' tardo demasiado o fallo. Intenta con 'classic' o 'hyperflux' para resultados mas rapidos."
+
         results = []
-        for i, img in enumerate(data.get("data", [])):
+        # Handle both sync and async response formats
+        images = data.get("data", [])
+        if not isinstance(images, list):
+            images = [images] if images else []
+        for i, img in enumerate(images):
             b64 = img.get("base64", "")
             if b64:
                 image_bytes = base64.b64decode(b64)
@@ -130,7 +225,10 @@ async def freepik_generate(workspace_id: str, inputs: dict) -> str:
         seed = meta.get("seed", "N/A")
         img_size = meta.get("image", {})
 
+        model_name = model or "classic"
+        model_cost = model_info["cost"]
         header = f"✅ IMAGEN GENERADA CON EXITO via Freepik AI\n"
+        header += f"Modelo: {model_name} ({model_info['description']}) | Coste: {model_cost}\n"
         header += f"Prompt: {prompt}\n"
         header += f"Tamaño: {img_size.get('width', '?')}x{img_size.get('height', '?')}px | Seed: {seed}\n\n"
         header += "IMPORTANTE: Incluye SIEMPRE las URLs completas de las imagenes en tu respuesta para que el usuario pueda verlas.\n\n"
@@ -226,13 +324,19 @@ async def dalle_generate(workspace_id: str, inputs: dict) -> str:
 
 FREEPIK_GENERATE_TOOL = {
     "name": "freepik_generate",
-    "description": "Genera imagenes con IA usando Freepik. Crea imagenes fotorrealistas, ilustraciones, arte digital, etc. a partir de un prompt de texto. Ideal para contenido de redes sociales, banners, mockups y material visual.",
+    "description": "Genera imagenes con IA usando Freepik. Multiples modelos disponibles: classic (~1 credit, rapido), mystic (~3-5 credits, ultra-realista), flux-pro (~5 credits, premium), flux-turbo (~2 credits, rapido), hyperflux (~1 credit, sub-segundo), seedream (~2 credits, alta calidad). Ideal para contenido de redes sociales, banners, mockups, logos y material visual.",
     "input_schema": {
         "type": "object",
         "properties": {
             "prompt": {
                 "type": "string",
                 "description": "Descripcion detallada de la imagen a generar. Se mas especifico para mejores resultados. Ejemplo: 'Professional product photography of a coffee cup on a marble table, morning light, minimalist style'"
+            },
+            "model": {
+                "type": "string",
+                "description": "Modelo de IA a usar. classic=rapido y versatil (~1cr), mystic=ultra-realista (~3-5cr), flux-pro=premium (~5cr), flux-turbo=rapido economico (~2cr), flux-dev=detallado (~3cr), hyperflux=sub-segundo (~1cr), seedream=ultima gen (~2cr). Default: classic",
+                "enum": ["classic", "mystic", "flux-pro", "flux-turbo", "flux-dev", "hyperflux", "seedream"],
+                "default": "classic"
             },
             "negative_prompt": {
                 "type": "string",
@@ -245,14 +349,28 @@ FREEPIK_GENERATE_TOOL = {
             },
             "size": {
                 "type": "string",
-                "description": "Proporcion de la imagen",
+                "description": "Proporcion de la imagen. square=1:1, landscape=16:9 o 4:3, portrait=9:16 o 3:4",
                 "enum": ["square_1_1", "landscape_4_3", "landscape_16_9", "portrait_3_4", "portrait_9_16"],
                 "default": "square_1_1"
             },
             "style": {
                 "type": "string",
-                "description": "Estilo visual. Opciones: photo, anime, digital-art, comic, fantasy, cyberpunk, 3d, watercolor",
+                "description": "Estilo visual (solo modelo classic). photo, anime, digital-art, comic, fantasy, cyberpunk, 3d, watercolor",
                 "enum": ["photo", "anime", "digital-art", "comic", "fantasy", "cyberpunk", "3d", "watercolor"]
+            },
+            "guidance_scale": {
+                "type": "number",
+                "description": "Fidelidad al prompt (0.0-2.0). Bajo=mas creatividad IA, Alto=mas fiel al prompt. Default: 1.0",
+                "default": 1.0
+            },
+            "seed": {
+                "type": "integer",
+                "description": "Semilla para reproducir resultados identicos (0-1000000). Omitir para aleatorio."
+            },
+            "colors": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Colores dominantes en formato hex. Ejemplo: ['#7F77DD', '#3B82F6', '#000000']. Max 5 colores."
             }
         },
         "required": ["prompt"]

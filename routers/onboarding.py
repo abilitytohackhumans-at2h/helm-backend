@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from config import settings
 from supabase import create_client
+from routers.notifications import notify_super_admins
 
 router = APIRouter()
 sb = create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_KEY)
@@ -186,6 +187,14 @@ async def self_service_onboard(req: SelfOnboardRequest, user_id: str = ""):
         }).eq("id", ws["id"]).execute()
     except Exception:
         pass
+
+    # 9. Notify super admins about new registration
+    notify_super_admins(
+        title="🆕 Nuevo cliente registrado",
+        message=f"{req.company_name} se ha registrado con plan {req.plan} y {len(agents_created)} agentes.",
+        type="success",
+        link="/admin",
+    )
 
     return {
         "workspace": ws,

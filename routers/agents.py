@@ -41,6 +41,7 @@ async def create_agent(agent: AgentCreate, user: AuthUser = Depends(get_current_
         "slug": agent.slug,
         "system_prompt": agent.system_prompt,
         "tools_enabled": agent.tools_enabled,
+        "metadata": agent.metadata or {},
         "is_active": True,
     }).execute()
     return row.data[0]
@@ -53,6 +54,7 @@ async def update_agent(slug: str, update: AgentUpdate, user: AuthUser = Depends(
     if update.system_prompt is not None: data["system_prompt"] = update.system_prompt
     if update.is_active is not None: data["is_active"] = update.is_active
     if update.tools_enabled is not None: data["tools_enabled"] = update.tools_enabled
+    if update.metadata is not None: data["metadata"] = update.metadata
 
     if data:
         query = sb.table("agents").update(data).eq("slug", slug)

@@ -58,7 +58,7 @@ TOOL_REGISTRY = {
 class DynamicAgent(BaseAgent):
     """Agent whose prompt and tools are loaded from the database."""
 
-    def __init__(self, slug: str, name: str, system_prompt: str, tools_enabled: list[str], workspace_id: str = ""):
+    def __init__(self, slug: str, name: str, system_prompt: str, tools_enabled: list[str], workspace_id: str = "", metadata: dict | None = None):
         # Build tool definitions from registry
         tool_defs = []
         self._handlers: dict = {}
@@ -67,13 +67,23 @@ class DynamicAgent(BaseAgent):
                 tool_defs.append(TOOL_REGISTRY[tool_slug]["definition"])
                 self._handlers[tool_slug] = TOOL_REGISTRY[tool_slug]["handler"]
 
+        # Inject metadata preferences into system prompt
+        enriched_prompt = system_prompt
+        if metadata:
+            prefs = []
+            if metadata.get("freepik_model"):
+                prefs.append(f"Cuando uses freepik_generate, usa SIEMPRE el modelo: {metadata['freepik_model']}")
+            if prefs:
+                enriched_prompt += "\n\n## Configuracion del agente\n" + "\n".join(f"- {p}" for p in prefs)
+
         super().__init__(
             name=name,
-            system_prompt=system_prompt,
+            system_prompt=enriched_prompt,
             tools=tool_defs if tool_defs else None,
         )
         self.slug = slug
         self.workspace_id = workspace_id
+        self.metadata = metadata or {}
 
     async def _execute_tool(self, name: str, inputs: dict):
         handler = self._handlers.get(name)

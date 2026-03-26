@@ -19,6 +19,7 @@ class AgentUpdate(BaseModel):
     system_prompt: Optional[str] = None
     is_active: Optional[bool] = None
     tools_enabled: Optional[list[str]] = None
+    metadata: Optional[dict] = None
 
 class AgentCreate(BaseModel):
     workspace_id: str
@@ -26,3 +27,4 @@ class AgentCreate(BaseModel):
     slug: str
     system_prompt: str
     tools_enabled: list[str] = []
+    metadata: dict = {}

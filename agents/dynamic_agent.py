@@ -12,6 +12,10 @@ from tools.instagram_tool import (
     instagram_read_comments, INSTAGRAM_READ_COMMENTS_TOOL,
     instagram_reply_comment, INSTAGRAM_REPLY_COMMENT_TOOL,
 )
+from tools.image_tool import (
+    freepik_generate, FREEPIK_GENERATE_TOOL,
+    dalle_generate, DALLE_GENERATE_TOOL,
+)
 
 # Registry of available tools
 # Handlers accept (name, inputs, **kwargs) — workspace_id passed via kwargs
@@ -39,6 +43,14 @@ TOOL_REGISTRY = {
     "instagram_reply_comment": {
         "definition": INSTAGRAM_REPLY_COMMENT_TOOL,
         "handler": lambda name, inputs, **kw: instagram_reply_comment(kw.get("workspace_id", ""), inputs),
+    },
+    "freepik_generate": {
+        "definition": FREEPIK_GENERATE_TOOL,
+        "handler": lambda name, inputs, **kw: freepik_generate(kw.get("workspace_id", ""), inputs),
+    },
+    "dalle_generate": {
+        "definition": DALLE_GENERATE_TOOL,
+        "handler": lambda name, inputs, **kw: dalle_generate(kw.get("workspace_id", ""), inputs),
     },
 }
 

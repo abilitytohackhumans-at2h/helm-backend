@@ -11,6 +11,8 @@ class Settings(BaseSettings):
     FACEBOOK_APP_ID: str = ""
     FACEBOOK_APP_SECRET: str = ""
     ENCRYPTION_KEY: str = ""  # Fernet key for token encryption
+    FREEPIK_API_KEY: str = ""  # Global fallback Freepik API key
+    OPENAI_API_KEY: str = ""  # Global fallback OpenAI API key
     FRONTEND_URL: str = "http://localhost:5173"
     MODEL_NAME: str = "claude-sonnet-4-20250514"
     ENVIRONMENT: str = "development"  # development | production

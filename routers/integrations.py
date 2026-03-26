@@ -162,3 +162,64 @@ async def get_integration_status(
         }
 
     return status
+
+
+# ─── Generic API Key integrations (Freepik, OpenAI, etc.) ────────
+
+class ApiKeyRequest(BaseModel):
+    workspace_id: str
+    provider: str  # 'freepik' | 'openai'
+    api_key: str
+
+
+@router.post("/api-key")
+async def save_api_key(
+    body: ApiKeyRequest,
+    user: AuthUser = Depends(get_current_user),
+):
+    """Save an encrypted API key for a provider (freepik, openai, etc.)."""
+    await require_workspace_access(body.workspace_id, user)
+
+    if body.provider not in ("freepik", "openai"):
+        raise HTTPException(status_code=400, detail="Provider no soportado")
+
+    if not body.api_key or len(body.api_key) < 5:
+        raise HTTPException(status_code=400, detail="API key invalida")
+
+    encrypted = encrypt_token(body.api_key)
+
+    existing = sb.table("workspace_integrations").select("id").eq(
+        "workspace_id", body.workspace_id
+    ).eq("provider", body.provider).execute().data
+
+    data = {
+        "workspace_id": body.workspace_id,
+        "provider": body.provider,
+        "access_token_encrypted": encrypted,
+        "is_active": True,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "metadata": {"type": "api_key"},
+    }
+
+    if existing:
+        sb.table("workspace_integrations").update(data).eq("id", existing[0]["id"]).execute()
+    else:
+        sb.table("workspace_integrations").insert(data).execute()
+
+    return {"connected": True, "provider": body.provider}
+
+
+@router.delete("/api-key")
+async def delete_api_key(
+    workspace_id: str,
+    provider: str,
+    user: AuthUser = Depends(get_current_user),
+):
+    """Remove an API key integration."""
+    await require_workspace_access(workspace_id, user)
+
+    sb.table("workspace_integrations").delete().eq(
+        "workspace_id", workspace_id
+    ).eq("provider", provider).execute()
+
+    return {"disconnected": True, "provider": provider}

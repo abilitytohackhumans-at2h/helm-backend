@@ -74,47 +74,86 @@ async def _upload_to_storage(image_bytes: bytes, filename: str, workspace_id: st
 
 # Model endpoints and info
 FREEPIK_MODELS = {
+    # ── Classic ──
     "classic": {
         "endpoint": "/v1/ai/text-to-image",
         "async": False,
-        "cost": "~1 credit",
-        "description": "Classic fast — rapido y versatil",
+        "cost": "1 cr",
+        "description": "Classic Fast — rapido, estilos artisticos",
+        "sizes": ["square_1_1", "landscape_4_3", "landscape_16_9", "portrait_3_4", "portrait_9_16"],
     },
+    # ── Mystic (Freepik exclusive) ──
     "mystic": {
         "endpoint": "/v1/ai/mystic",
         "async": True,
-        "cost": "~3-5 credits",
-        "description": "Mystic — ultra-realista, exclusivo de Freepik",
+        "cost": "3-5 cr",
+        "description": "Mystic 2.5 — ultra-realista, LoRA, 1K/2K/4K",
+        "sizes": ["square_1_1", "classic_4_3", "traditional_3_4", "widescreen_16_9", "social_story_9_16"],
     },
-    "flux-pro": {
-        "endpoint": "/v1/ai/flux/pro-1.1",
+    # ── Flux family ──
+    "flux-kontext-pro": {
+        "endpoint": "/v1/ai/text-to-image/flux-kontext-pro",
         "async": True,
-        "cost": "~5 credits",
-        "description": "Flux Pro 1.1 — calidad premium",
+        "cost": "5 cr",
+        "description": "Flux Kontext Pro — context-aware, imagen de referencia",
+        "sizes": ["square_1_1", "classic_4_3", "traditional_3_4", "widescreen_16_9", "social_story_9_16", "standard_3_2"],
     },
-    "flux-turbo": {
-        "endpoint": "/v1/ai/flux/2/turbo",
+    "flux-2-pro": {
+        "endpoint": "/v1/ai/text-to-image/flux-2-pro",
         "async": True,
-        "cost": "~2 credits",
+        "cost": "5 cr",
+        "description": "Flux 2 Pro — profesional, hasta 4 imagenes input",
+        "sizes": ["square_1_1", "classic_4_3", "traditional_3_4", "widescreen_16_9", "social_story_9_16"],
+    },
+    "flux-2-turbo": {
+        "endpoint": "/v1/ai/text-to-image/flux-2-turbo",
+        "async": True,
+        "cost": "2 cr",
         "description": "Flux 2 Turbo — rapido y economico",
+        "sizes": ["square_1_1", "classic_4_3", "traditional_3_4", "widescreen_16_9", "social_story_9_16"],
+    },
+    "flux-2-klein": {
+        "endpoint": "/v1/ai/text-to-image/flux-2-klein",
+        "async": True,
+        "cost": "1 cr",
+        "description": "Flux 2 Klein — sub-segundo, hasta 4 refs",
+        "sizes": ["square_1_1", "classic_4_3", "traditional_3_4", "widescreen_16_9", "social_story_9_16"],
+    },
+    "flux-pro-1.1": {
+        "endpoint": "/v1/ai/text-to-image/flux-pro-v1-1",
+        "async": True,
+        "cost": "5 cr",
+        "description": "Flux Pro 1.1 — calidad premium maxima",
+        "sizes": ["square_1_1", "classic_4_3", "traditional_3_4", "widescreen_16_9", "social_story_9_16"],
     },
     "flux-dev": {
-        "endpoint": "/v1/ai/flux/dev",
+        "endpoint": "/v1/ai/text-to-image/flux-dev",
         "async": True,
-        "cost": "~3 credits",
+        "cost": "3 cr",
         "description": "Flux Dev — detallado, alta calidad",
+        "sizes": ["square_1_1", "classic_4_3", "traditional_3_4", "widescreen_16_9", "social_story_9_16"],
     },
     "hyperflux": {
-        "endpoint": "/v1/ai/flux/hyperflux",
+        "endpoint": "/v1/ai/text-to-image/hyperflux",
         "async": True,
-        "cost": "~1 credit",
-        "description": "HyperFlux — ultra-rapido (sub-segundo)",
+        "cost": "1 cr",
+        "description": "HyperFlux — ultra-rapido (el mas rapido)",
+        "sizes": ["square_1_1", "classic_4_3", "traditional_3_4", "widescreen_16_9", "social_story_9_16"],
     },
-    "seedream": {
-        "endpoint": "/v1/ai/seedream/4.5",
+    # ── Seedream family ──
+    "seedream-4.5": {
+        "endpoint": "/v1/ai/text-to-image/seedream-v4-5",
         "async": True,
-        "cost": "~2 credits",
-        "description": "Seedream 4.5 — ultimo modelo, alta calidad",
+        "cost": "2 cr",
+        "description": "Seedream 4.5 — tipografia, posters, hasta 4MP",
+        "sizes": ["square_1_1", "classic_4_3", "traditional_3_4", "widescreen_16_9", "social_story_9_16"],
+    },
+    "seedream-4": {
+        "endpoint": "/v1/ai/text-to-image/seedream-v4",
+        "async": True,
+        "cost": "2 cr",
+        "description": "Seedream 4 — next-gen, rapido",
+        "sizes": ["square_1_1", "classic_4_3", "traditional_3_4", "widescreen_16_9", "social_story_9_16"],
     },
 }
 
@@ -324,33 +363,33 @@ async def dalle_generate(workspace_id: str, inputs: dict) -> str:
 
 FREEPIK_GENERATE_TOOL = {
     "name": "freepik_generate",
-    "description": "Genera imagenes con IA usando Freepik. Multiples modelos disponibles: classic (~1 credit, rapido), mystic (~3-5 credits, ultra-realista), flux-pro (~5 credits, premium), flux-turbo (~2 credits, rapido), hyperflux (~1 credit, sub-segundo), seedream (~2 credits, alta calidad). Ideal para contenido de redes sociales, banners, mockups, logos y material visual.",
+    "description": "Genera imagenes con IA usando Freepik. 12 modelos: classic(1cr), hyperflux(1cr,ultra-rapido), flux-2-klein(1cr,sub-segundo), flux-2-turbo(2cr), seedream-4(2cr), seedream-4.5(2cr,tipografia), flux-dev(3cr), mystic(3-5cr,ultra-realista), flux-kontext-pro(5cr,contexto), flux-2-pro(5cr,profesional), flux-pro-1.1(5cr,premium). Formatos: square, landscape 4:3/16:9, portrait 3:4/9:16, standard 3:2.",
     "input_schema": {
         "type": "object",
         "properties": {
             "prompt": {
                 "type": "string",
-                "description": "Descripcion detallada de la imagen a generar. Se mas especifico para mejores resultados. Ejemplo: 'Professional product photography of a coffee cup on a marble table, morning light, minimalist style'"
+                "description": "Descripcion detallada de la imagen a generar. Se mas especifico para mejores resultados."
             },
             "model": {
                 "type": "string",
-                "description": "Modelo de IA a usar. classic=rapido y versatil (~1cr), mystic=ultra-realista (~3-5cr), flux-pro=premium (~5cr), flux-turbo=rapido economico (~2cr), flux-dev=detallado (~3cr), hyperflux=sub-segundo (~1cr), seedream=ultima gen (~2cr). Default: classic",
-                "enum": ["classic", "mystic", "flux-pro", "flux-turbo", "flux-dev", "hyperflux", "seedream"],
+                "description": "Modelo de IA. Ordenados por coste: classic/hyperflux/flux-2-klein(1cr), flux-2-turbo/seedream-4/seedream-4.5(2cr), flux-dev(3cr), mystic(3-5cr), flux-kontext-pro/flux-2-pro/flux-pro-1.1(5cr)",
+                "enum": ["classic", "mystic", "flux-kontext-pro", "flux-2-pro", "flux-2-turbo", "flux-2-klein", "flux-pro-1.1", "flux-dev", "hyperflux", "seedream-4.5", "seedream-4"],
                 "default": "classic"
             },
             "negative_prompt": {
                 "type": "string",
-                "description": "Elementos que quieres evitar en la imagen. Ejemplo: 'blurry, low quality, cartoon, text'"
+                "description": "Elementos a evitar. Ejemplo: 'blurry, low quality, cartoon, text'"
             },
             "num_images": {
                 "type": "integer",
-                "description": "Numero de imagenes a generar (1-4). Default: 1",
+                "description": "Imagenes a generar (1-4). Default: 1",
                 "default": 1
             },
             "size": {
                 "type": "string",
-                "description": "Proporcion de la imagen. square=1:1, landscape=16:9 o 4:3, portrait=9:16 o 3:4",
-                "enum": ["square_1_1", "landscape_4_3", "landscape_16_9", "portrait_3_4", "portrait_9_16"],
+                "description": "Formato/proporcion de la imagen",
+                "enum": ["square_1_1", "classic_4_3", "traditional_3_4", "widescreen_16_9", "social_story_9_16", "standard_3_2"],
                 "default": "square_1_1"
             },
             "style": {

@@ -445,30 +445,43 @@ async def list_workspace_members(workspace_id: str):
         "user_id, role, created_at"
     ).eq("workspace_id", workspace_id).execute().data
 
-    # Enrich with profile info
+    # Enrich with profile info (fallback to auth if profile missing)
     result = []
     for m in members:
+        email = ""
+        full_name = ""
+        avatar_url = None
         try:
             profile = sb.table("profiles").select(
                 "email, full_name, avatar_url"
             ).eq("id", m["user_id"]).single().execute().data
-            result.append({
-                "user_id": m["user_id"],
-                "email": profile.get("email", ""),
-                "full_name": profile.get("full_name", ""),
-                "avatar_url": profile.get("avatar_url"),
-                "role": m["role"],
-                "created_at": m["created_at"],
-            })
+            email = profile.get("email", "")
+            full_name = profile.get("full_name", "")
+            avatar_url = profile.get("avatar_url")
         except Exception:
-            result.append({
-                "user_id": m["user_id"],
-                "email": "unknown",
-                "full_name": "",
-                "avatar_url": None,
-                "role": m["role"],
-                "created_at": m["created_at"],
-            })
+            # Fallback: get email from Supabase Auth
+            try:
+                auth_user = sb.auth.admin.get_user_by_id(m["user_id"])
+                email = auth_user.user.email or ""
+                full_name = email.split("@")[0]
+                # Auto-create missing profile
+                sb.table("profiles").upsert({
+                    "id": m["user_id"],
+                    "email": email,
+                    "full_name": full_name,
+                    "is_super_admin": False,
+                }).execute()
+            except Exception:
+                email = "unknown"
+
+        result.append({
+            "user_id": m["user_id"],
+            "email": email,
+            "full_name": full_name,
+            "avatar_url": avatar_url,
+            "role": m["role"],
+            "created_at": m["created_at"],
+        })
 
     return result
 

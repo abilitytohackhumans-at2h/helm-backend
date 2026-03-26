@@ -22,6 +22,16 @@ async def get_profile(user_id: str):
     return profile
 
 
+@router.patch("/me")
+async def update_profile(user_id: str, updates: dict):
+    """Update user profile (full_name, avatar_url)."""
+    allowed = {"full_name", "avatar_url"}
+    filtered = {k: v for k, v in updates.items() if k in allowed}
+    if not filtered:
+        return {"ok": False, "message": "No valid fields"}
+    return sb.table("profiles").update(filtered).eq("id", user_id).execute().data
+
+
 @router.get("/me/workspaces")
 async def get_user_workspaces(user_id: str):
     """Get all workspaces this user has access to."""

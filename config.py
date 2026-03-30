@@ -13,6 +13,15 @@ class Settings(BaseSettings):
     ENCRYPTION_KEY: str = ""  # Fernet key for token encryption
     FREEPIK_API_KEY: str = ""  # Global fallback Freepik API key
     OPENAI_API_KEY: str = ""  # Global fallback OpenAI API key
+    # WeNeedToEat Outreach Pipeline
+    GOOGLE_PLACES_API_KEY: str = ""
+    SMTP_HOST: str = "smtp.gmail.com"
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ""
+    SMTP_PASS: str = ""
+    WHATSAPP_TOKEN: str = ""
+    WHATSAPP_PHONE_ID: str = ""
+    INSTAGRAM_ACCESS_TOKEN: str = ""
     FRONTEND_URL: str = "http://localhost:5173"
     MODEL_NAME: str = "claude-sonnet-4-20250514"
     ENVIRONMENT: str = "development"  # development | production

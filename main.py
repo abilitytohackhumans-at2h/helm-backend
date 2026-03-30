@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
-from routers import tasks, agents, hitl, metrics, memory, admin, profile, flows, onboarding, notifications, admin_analytics, integrations
+from routers import tasks, agents, hitl, metrics, memory, admin, profile, flows, onboarding, notifications, admin_analytics, integrations, outreach
 from config import settings
 from scheduler import scheduler_loop
 
@@ -206,6 +206,7 @@ app.include_router(onboarding.router, prefix="/onboarding", tags=["onboarding"])
 app.include_router(notifications.router, prefix="/notifications", tags=["notifications"])
 app.include_router(admin_analytics.router, prefix="/admin", tags=["admin-analytics"])
 app.include_router(integrations.router, prefix="/integrations", tags=["integrations"])
+app.include_router(outreach.router, tags=["outreach"])
 
 
 # ══════════════════════════════════════════════════════

@@ -232,3 +232,32 @@ async def delete_api_key(
     ).eq("provider", provider).execute()
 
     return {"disconnected": True, "provider": provider}
+
+
+# ─── Workspace Briefing ──────────────────────────────────────────
+
+class BriefingUpdate(BaseModel):
+    workspace_id: str
+    briefing: dict  # {industry, target_audience, brand_tone, brand_values, ...}
+
+
+@router.get("/briefing")
+async def get_briefing(
+    workspace_id: str,
+    user: AuthUser = Depends(get_current_user),
+):
+    """Get workspace briefing."""
+    await require_workspace_access(workspace_id, user)
+    ws = sb.table("workspaces").select("briefing").eq("id", workspace_id).single().execute()
+    return {"briefing": (ws.data or {}).get("briefing") or {}}
+
+
+@router.post("/briefing")
+async def save_briefing(
+    body: BriefingUpdate,
+    user: AuthUser = Depends(get_current_user),
+):
+    """Save workspace briefing — injected into all agent system prompts."""
+    await require_workspace_access(body.workspace_id, user)
+    sb.table("workspaces").update({"briefing": body.briefing}).eq("id", body.workspace_id).execute()
+    return {"ok": True, "briefing": body.briefing}

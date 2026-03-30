@@ -58,7 +58,7 @@ TOOL_REGISTRY = {
 class DynamicAgent(BaseAgent):
     """Agent whose prompt and tools are loaded from the database."""
 
-    def __init__(self, slug: str, name: str, system_prompt: str, tools_enabled: list[str], workspace_id: str = "", metadata: dict | None = None):
+    def __init__(self, slug: str, name: str, system_prompt: str, tools_enabled: list[str], workspace_id: str = "", metadata: dict | None = None, briefing: dict | None = None):
         # Build tool definitions from registry
         tool_defs = []
         self._handlers: dict = {}
@@ -75,6 +75,30 @@ class DynamicAgent(BaseAgent):
                 prefs.append(f"Cuando uses freepik_generate, usa SIEMPRE el modelo: {metadata['freepik_model']}")
             if prefs:
                 enriched_prompt += "\n\n## Configuracion del agente\n" + "\n".join(f"- {p}" for p in prefs)
+
+        # Inject workspace briefing into system prompt
+        if briefing and any(briefing.values()):
+            lines = ["\n\n## Contexto del cliente"]
+            if briefing.get("industry"):
+                lines.append(f"- Sector: {briefing['industry']}")
+            if briefing.get("target_audience"):
+                lines.append(f"- Publico objetivo: {briefing['target_audience']}")
+            if briefing.get("brand_tone"):
+                lines.append(f"- Tono de marca: {briefing['brand_tone']}")
+            if briefing.get("brand_values"):
+                vals = briefing["brand_values"] if isinstance(briefing["brand_values"], list) else [briefing["brand_values"]]
+                lines.append(f"- Valores: {', '.join(vals)}")
+            if briefing.get("competitors"):
+                comps = briefing["competitors"] if isinstance(briefing["competitors"], list) else [briefing["competitors"]]
+                lines.append(f"- Competidores: {', '.join(comps)}")
+            if briefing.get("products_services"):
+                lines.append(f"- Productos/servicios: {briefing['products_services']}")
+            if briefing.get("preferred_language"):
+                lines.append(f"- Idioma preferido: {briefing['preferred_language']}")
+            if briefing.get("extra_context"):
+                lines.append(f"- Info adicional: {briefing['extra_context']}")
+            lines.append("\nUSA este contexto para personalizar todas tus respuestas al sector y tono del cliente.")
+            enriched_prompt += "\n".join(lines)
 
         super().__init__(
             name=name,

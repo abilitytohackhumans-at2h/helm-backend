@@ -54,6 +54,10 @@ def get_agent_map(workspace_id: str) -> dict[str, DynamicAgent]:
         "workspace_id", workspace_id
     ).eq("is_active", True).execute().data
 
+    # Load workspace briefing to inject into all agents
+    ws = sb.table("workspaces").select("briefing").eq("id", workspace_id).single().execute()
+    briefing = (ws.data or {}).get("briefing") or {}
+
     agent_map = {}
     for a in agents:
         agent_map[a["slug"]] = DynamicAgent(
@@ -63,6 +67,7 @@ def get_agent_map(workspace_id: str) -> dict[str, DynamicAgent]:
             tools_enabled=a.get("tools_enabled") or [],
             workspace_id=workspace_id,
             metadata=a.get("metadata") or {},
+            briefing=briefing,
         )
     return agent_map
 

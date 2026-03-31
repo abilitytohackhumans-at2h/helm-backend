@@ -34,14 +34,36 @@ async def create_task(request: Request, req: TaskRequest, bg: BackgroundTasks, u
         created_at=task["created_at"],
     )
 
+async def fire_webhook(workspace_id: str, event: str, payload: dict):
+    """Send webhook to configured URL if exists."""
+    try:
+        import httpx
+        ws = sb.table("workspaces").select("webhook_url, webhook_secret").eq("id", workspace_id).single().execute()
+        url = (ws.data or {}).get("webhook_url")
+        if not url:
+            return
+        secret = (ws.data or {}).get("webhook_secret", "")
+        import hashlib, hmac, json as j
+        body = j.dumps({"event": event, "data": payload}, default=str)
+        sig = hmac.new(secret.encode(), body.encode(), hashlib.sha256).hexdigest() if secret else ""
+        async with httpx.AsyncClient(timeout=10) as client:
+            await client.post(url, content=body, headers={
+                "Content-Type": "application/json",
+                "X-HELM-Signature": sig,
+                "X-HELM-Event": event,
+            })
+    except Exception:
+        pass  # Don't fail task if webhook fails
+
 async def run_orchestration(task_id: str, user_input: str, workspace_id: str):
     try:
         sb.table("tasks").update({"status": "running"}).eq("id", task_id).execute()
         result = await orchestrate(user_input, workspace_id, task_id)
         total_tokens = sum(r.get("tokens_used", 0) for r in result.get("results", {}).values()) if result.get("results") else 0
         cost_usd = round(total_tokens * 0.003 / 1000, 6)  # Approximate Claude Sonnet pricing
+        final_status = result.get("status", "completed")
         sb.table("tasks").update({
-            "status": result.get("status", "completed"),
+            "status": final_status,
             "plan_json": result.get("plan"),
             "result_json": result.get("results"),
             "assigned_agents": list(result.get("results", {}).keys()) if result.get("results") else [],
@@ -49,8 +71,18 @@ async def run_orchestration(task_id: str, user_input: str, workspace_id: str):
             "cost_usd": cost_usd,
             "completed_at": datetime.now(timezone.utc).isoformat(),
         }).eq("id", task_id).execute()
+
+        # Fire webhook
+        await fire_webhook(workspace_id, f"task.{final_status}", {
+            "task_id": task_id,
+            "status": final_status,
+            "user_input": user_input,
+            "tokens_used": total_tokens,
+            "cost_usd": cost_usd,
+        })
     except Exception as e:
         sb.table("tasks").update({"status": "failed", "result_json": {"error": str(e)}}).eq("id", task_id).execute()
+        await fire_webhook(workspace_id, "task.failed", {"task_id": task_id, "error": str(e)})
 
 @router.get("")
 async def list_tasks(workspace_id: str, user: AuthUser = Depends(get_current_user), status: str | None = None, limit: int = 50):

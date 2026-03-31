@@ -261,3 +261,42 @@ async def save_briefing(
     await require_workspace_access(body.workspace_id, user)
     sb.table("workspaces").update({"briefing": body.briefing}).eq("id", body.workspace_id).execute()
     return {"ok": True, "briefing": body.briefing}
+
+
+# ─── Webhooks ────────────────────────────────────────────────────
+
+class WebhookUpdate(BaseModel):
+    workspace_id: str
+    webhook_url: str = ""
+    webhook_secret: str = ""
+
+
+@router.get("/webhook")
+async def get_webhook(
+    workspace_id: str,
+    user: AuthUser = Depends(get_current_user),
+):
+    """Get webhook config (never returns secret)."""
+    await require_workspace_access(workspace_id, user)
+    ws = sb.table("workspaces").select("webhook_url, webhook_secret").eq("id", workspace_id).single().execute()
+    data = ws.data or {}
+    return {
+        "webhook_url": data.get("webhook_url", ""),
+        "has_secret": bool(data.get("webhook_secret")),
+    }
+
+
+@router.post("/webhook")
+async def save_webhook(
+    body: WebhookUpdate,
+    user: AuthUser = Depends(get_current_user),
+):
+    """Save webhook URL and optional secret."""
+    await require_workspace_access(body.workspace_id, user)
+
+    update: dict = {"webhook_url": body.webhook_url}
+    if body.webhook_secret:
+        update["webhook_secret"] = body.webhook_secret
+
+    sb.table("workspaces").update(update).eq("id", body.workspace_id).execute()
+    return {"ok": True}
